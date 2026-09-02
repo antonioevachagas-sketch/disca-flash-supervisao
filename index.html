@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self' https://apxatktafwdrjccmbjju.supabase.co">
 <meta name="referrer" content="no-referrer">
 <meta name="color-scheme" content="light"><title>Disca Flash — Supervisão</title>
 <style>
@@ -20,7 +20,7 @@
 </main></section><div id="toast" class="toast"></div>
 <script>
 const el=id=>document.getElementById(id), esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const API=new URL('/functions/v1/disca-flash',location.origin).href;
+const API='https://apxatktafwdrjccmbjju.supabase.co/functions/v1/disca-flash';
 let token=sessionStorage.getItem('df_token')||'', overview=null, timer=null;
 const statusName={idle:'Aguardando',running:'Em andamento',paused:'Pausada',finished:'Finalizada',archived:'Arquivada',pending:'Pendente',dialing:'Ligando',connected:'Em conversa',awaiting_disposition:'A tabular',no_answer:'Não atendeu',completed:'Concluído',failed:'Falhou',busy:'Ocupado'};
 function toast(message){el('toast').textContent=message;el('toast').classList.add('show');setTimeout(()=>el('toast').classList.remove('show'),3500)}
