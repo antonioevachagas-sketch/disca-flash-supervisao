@@ -13,8 +13,8 @@ window.addEventListener('hashchange',()=>showView(location.hash.slice(1)));showV
 function normalizeSearch(value){return String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim()}
 const numberFormat=new Intl.NumberFormat('pt-BR');
 const number=value=>numberFormat.format(metricNumber(value));
-el('consultantFilter').onchange=()=>{selectedConsultant=el('consultantFilter').value;selectedCampaign='';leadOffset=0;refresh()};
-for(const id of ['teamSearch','teamStatus','campaignSearch','campaignStatus'])el(id).addEventListener(id.endsWith('Search')?'input':'change',()=>{if(overview){render();renderDashboard()}});
+el('consultantFilter').onchange=()=>{selectedConsultant=el('consultantFilter').value;selectedCampaign='';leadOffset=0;refresh(false,false,true)};
+let searchTimer;for(const id of ['teamSearch','teamStatus','campaignSearch','campaignStatus'])el(id).addEventListener(id.endsWith('Search')?'input':'change',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>{if(overview){render();renderDashboard()}},id.endsWith('Search')?120:0)});
 function renderDashboard(){
   const {consultants=[],campaigns=[],charts,metrics={}}=overview;
   const scoped=consultants.filter(p=>!selectedConsultant||p.id===selectedConsultant);
@@ -48,8 +48,8 @@ function renderManagement(people,campaigns){
   const filtered=campaigns.filter(c=>(!cq||normalizeSearch(c.name+' '+c.source_filename).includes(cq))&&(!cs||c.status===cs));
   el('campaignBody').innerHTML=filtered.length?filtered.map(c=>'<tr><td><strong>'+esc(c.name)+'</strong><br><small>'+esc(c.source_filename)+'</small></td><td>'+esc(c.consultant_name)+'</td><td>'+number(c.completed)+' / '+number(c.total)+'<div class="progress"><i style="width:'+Math.min(100,c.total?c.completed/c.total*100:0)+'%"></i></div></td><td><span class="badge '+(c.status==='running'?'green':'')+'">'+esc(statusName[c.status]||c.status)+'</span><br><small>'+number(c.allowed_start_hour)+'h–'+number(c.allowed_end_hour)+'h · '+number(c.max_attempts_per_lead)+' tentativas · '+number(c.max_daily_calls)+'/dia</small></td><td><div class="actions"><button class="mini" data-campaign="'+esc(c.id)+'">Ver contatos</button><button class="mini danger" data-action="delete_campaign" data-id="'+esc(c.id)+'">Excluir planilha</button></div></td></tr>').join(''):'<tr><td colspan="5" class="empty">Nenhuma campanha neste filtro.</td></tr>';
 }
-async function loadConsultant(id){selectedConsultant=id;selectedCampaign='';leadOffset=0;showView('dashboard');await refresh()}
-async function loadLeads(id){selectedCampaign=id;leadOffset=0;showView('clients');await refresh()}
+async function loadConsultant(id){selectedConsultant=id;selectedCampaign='';leadOffset=0;showView('dashboard');await refresh(false,false,true)}
+async function loadLeads(id){selectedCampaign=id;leadOffset=0;showView('clients');await refresh(false,false,true)}
 function resetPassword(id){openAction('password',id)}
 function toggleConsultant(id,active){openAction(active?'activate':'block',id)}
 let pendingAction=null;
