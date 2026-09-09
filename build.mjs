@@ -10,6 +10,11 @@ for(const file of ['app.js','dashboard.js']){
  for(const [,id] of source.matchAll(/\bel\('([^']+)'\)/g))assert(ids.includes(id),'Elemento ausente: '+id);
 }
 assert(html.includes("script-src 'self'"),'Scripts locais bloqueados');
+assert(html.includes('id="allocationTarget"'),'Seletor de destino da planilha ausente');
+assert(html.includes('value="single"'),'Opção de envio para um único consultor ausente');
+const dashboard=readFileSync(new URL('dashboard.js',root),'utf8');
+assert(dashboard.includes("el('allocationTarget').value==='single'"),'Regra de seleção única ausente');
+assert(dashboard.includes("distribution_mode:single?'equal'"),'Envio único deve usar a distribuição integral existente');
 mkdirSync(new URL('dist/',root),{recursive:true});
 for(const file of ['index.html','app.js','dashboard.js','styles.css','logo.png','privacidade.html','suporte.html','exclusao-de-dados.html'])copyFileSync(new URL(file,root),new URL('dist/'+file,root));
 console.log('Painel validado e arquivos públicos preparados.');
