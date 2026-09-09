@@ -1,14 +1,14 @@
 
 const el=id=>document.getElementById(id), esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const API='https://apxatktafwdrjccmbjju.supabase.co/functions/v1/disca-flash';
-let token=sessionStorage.getItem('df_token')||'',refreshToken=sessionStorage.getItem('df_refresh')||'',expiresAt=Number(sessionStorage.getItem('df_expires')||0),overview=null,timer=null,selectedCampaign='',selectedConsultant='',leadOffset=0;const leadLimit=100;
+let token=sessionStorage.getItem('df_token')||'',refreshToken=sessionStorage.getItem('df_refresh')||'',expiresAt=Number(sessionStorage.getItem('df_expires')||0),overview=null,timer=null,selectedCampaign='',selectedConsultant='',selectedDay='',leadOffset=0;const leadLimit=100;
 const statusName={idle:'Aguardando',running:'Em andamento',paused:'Pausada',finished:'Finalizada',archived:'Arquivada',pending:'Pendente',dialing:'Ligando',connected:'Em conversa',awaiting_disposition:'A tabular',no_answer:'Não atendeu',completed:'Concluído',failed:'Falhou',busy:'Ocupado'};
 const eventName={CONSULTANT_CREATED:'Consultor criado',MASTER_UPLOADED:'Planilha distribuída',LEAD_UPDATED:'Resultado de ligação atualizado',CALL_STARTED:'Ligação iniciada',CALL_RETRY_SCHEDULED:'Nova tentativa agendada',CAMPAIGN_RESET:'Fila reiniciada'};
 function toast(message){el('toast').textContent=message;el('toast').classList.add('show');setTimeout(()=>el('toast').classList.remove('show'),3500)}
 let renewal=null,refreshSequence=0,refreshPending=0,mutationPending=false;
 const overviewCache=new Map(),overviewRequests=new Map();let overviewGeneration=0;
 function clearOverviewCache(){overviewGeneration++;refreshSequence++;overviewCache.clear();overviewRequests.clear()}
-function overviewKey(){return JSON.stringify([selectedConsultant,selectedCampaign,leadOffset])}
+function overviewKey(){return JSON.stringify([selectedConsultant,selectedCampaign,selectedDay,leadOffset])}
 function rememberOverview(key,value){overviewCache.delete(key);overviewCache.set(key,{value,time:Date.now()});if(overviewCache.size>12)overviewCache.delete(overviewCache.keys().next().value)}
 async function request(action,data,form=false,bearer=token){
   const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),form?120000:35000);
@@ -31,18 +31,19 @@ async function api(action,data={},form=false,retry=true){
 }
 function busy(form,on){form.classList.toggle('loading',on);form.setAttribute('aria-busy',String(on));form.querySelectorAll('button[type=submit]').forEach(b=>b.disabled=on)}
 function startPolling(){clearInterval(timer);timer=setInterval(()=>{if(!document.hidden&&!refreshPending&&!mutationPending&&!document.querySelector('dialog[open]'))refresh()},15000)}
-function logout(){clearOverviewCache();overview=null;selectedCampaign='';selectedConsultant='';leadOffset=0;document.querySelectorAll('dialog[open]').forEach(d=>d.close());token='';refreshToken='';expiresAt=0;sessionStorage.removeItem('df_token');sessionStorage.removeItem('df_refresh');sessionStorage.removeItem('df_expires');clearInterval(timer);el('appView').classList.add('hidden');el('loginView').classList.remove('hidden');el('password').value=''}
+function logout(){clearOverviewCache();overview=null;selectedCampaign='';selectedConsultant='';selectedDay='';leadOffset=0;document.querySelectorAll('dialog[open]').forEach(d=>d.close());token='';refreshToken='';expiresAt=0;sessionStorage.removeItem('df_token');sessionStorage.removeItem('df_refresh');sessionStorage.removeItem('df_expires');clearInterval(timer);el('appView').classList.add('hidden');el('loginView').classList.remove('hidden');el('password').value=''}
 el('logout').onclick=logout;
 el('loginForm').onsubmit=async e=>{e.preventDefault();const f=e.currentTarget;if(f.classList.contains('loading'))return;busy(f,true);el('loginMsg').textContent='Entrando…';try{const r=await api('login',{login:el('login').value,password:el('password').value,client:'supervisor'});clearOverviewCache();saveSession(r);sessionStorage.setItem('df_name',r.profile.display_name);setUserName(r.profile.display_name);el('loginView').classList.add('hidden');el('appView').classList.remove('hidden');el('password').value='';await refresh(false,true);startPolling();el('loginMsg').textContent=''}catch(err){el('loginMsg').textContent=err.message;el('syncStatus').textContent=err.message}finally{busy(f,false)}};
 function setUserName(name){el('userName').textContent=name||'Supervisor';el('avatar').textContent=(name||'Supervisor').split(/\s+/).map(x=>x[0]).slice(0,2).join('').toUpperCase()}
 el('consultantForm').onsubmit=async e=>{e.preventDefault();const f=e.currentTarget;if(mutationPending)return;mutationPending=true;busy(f,true);el('consultantMsg').textContent='Criando acesso…';let created=false;try{const r=await api('create_consultant',{display_name:el('cName').value,username:el('cLogin').value,password:el('cPassword').value});created=true;f.reset();el('consultantMsg').textContent='Acesso criado: '+r.username;await refresh(false,true);el('consultantDialog').close();showView('team');toast('Consultor criado. Login: '+r.username)}catch(err){el('consultantMsg').textContent=(created?'Conta criada. Não repita o cadastro. ':'')+err.message}finally{mutationPending=false;busy(f,false)}};
 el('refresh').onclick=()=>refresh(true);
 el('clearConsultantFilter').onclick=()=>loadConsultant('');
+el('clearDayFilter').onclick=()=>{el('dayFilter').value='';selectedDay='';leadOffset=0;refresh(false,false,true)};
 async function refresh(show=false,rethrow=false,allowCached=false){
  const seq=++refreshSequence,key=overviewKey(),generation=overviewGeneration;
- const params={campaign_id:selectedCampaign,consultant_id:selectedConsultant,lead_offset:leadOffset,lead_limit:leadLimit};
+ const params={campaign_id:selectedCampaign,consultant_id:selectedConsultant,day:selectedDay,lead_offset:leadOffset,lead_limit:leadLimit};
  const cached=overviewCache.get(key);
- function apply(result){overview=result;selectedCampaign=result.selected_campaign||'';selectedConsultant=result.selected_consultant||'';leadOffset=Number(result.lead_offset||0);render();renderDashboard()}
+ function apply(result){overview=result;selectedCampaign=result.selected_campaign||'';selectedConsultant=result.selected_consultant||'';if(Object.prototype.hasOwnProperty.call(result,'selected_day'))selectedDay=result.selected_day||'';leadOffset=Number(result.lead_offset||0);render();renderDashboard()}
  if(allowCached&&cached){apply(cached.value);el('syncStatus').textContent='Dados carregados · verificando atualizações…';}
  if(allowCached&&cached&&Date.now()-cached.time<10000){el('syncStatus').textContent='Dados atualizados há poucos segundos';return cached.value}
  refreshPending++;el('refresh').classList.add('is-refreshing');el('refresh').setAttribute('aria-busy','true');
@@ -58,6 +59,7 @@ async function refresh(show=false,rethrow=false,allowCached=false){
 }
 const dateTimeFormat=new Intl.DateTimeFormat('pt-BR',{dateStyle:'short',timeStyle:'short'}),shortTimeFormat=new Intl.DateTimeFormat('pt-BR',{timeStyle:'short'});
 function fmtDate(v){return v?dateTimeFormat.format(new Date(v)):'—'}
+function fmtDay(v){if(!/^\d{4}-\d{2}-\d{2}$/.test(v))return'';const [year,month,day]=v.split('-');return day+'/'+month+'/'+year}
 function metricNumber(value){let n=Number(value);return Number.isFinite(n)?n:0}
 function render(){
   let {consultants=[],campaigns=[],metrics={},leads=[],activities=[],lead_total:leadTotal=0,lead_offset:currentOffset=0,lead_limit:currentLimit=leadLimit,next_lead_offset:nextOffset=null,previous_lead_offset:previousOffset=null}=overview;
@@ -75,6 +77,7 @@ function render(){
   const campaignQuery=normalizeSearch(el('campaignSearch').value),campaignStatus=el('campaignStatus').value;
   const visibleCampaigns=scopedCampaigns.filter(x=>(!campaignQuery||normalizeSearch(x.name+' '+x.source_filename).includes(campaignQuery))&&(!campaignStatus||x.status===campaignStatus));
   el('consultantFilter').innerHTML='<option value="">Toda a equipe</option>'+consultants.map(x=>'<option value="'+esc(x.id)+'">'+esc(x.display_name)+'</option>').join('');el('consultantFilter').value=currentConsultantId;
+  el('dayFilter').value=selectedDay;el('clearDayFilter').classList.toggle('hidden',!selectedDay);
   const first=scopedLeadTotal&&currentOffset<scopedLeadTotal?currentOffset+1:0;
   const last=first?Math.min(currentOffset+scopedLeads.length,scopedLeadTotal):0;
 
@@ -92,15 +95,18 @@ function render(){
   const selectedName=selectedPerson?.display_name||'';
   el('teamFilterLabel').textContent=selectedName?'Consultor: '+selectedName:'Toda a equipe';
   el('clearConsultantFilter').classList.toggle('hidden',!currentConsultantId);
-  el('teamDashboardSummary').textContent=selectedPerson
+  const daySummary=selectedDay?' Ligações e resultados mostram somente '+fmtDay(selectedDay)+'; leads e pendentes continuam mostrando a carteira atual.':'';
+  el('teamDashboardSummary').textContent=(selectedPerson
     ? 'Você está vendo a operação de '+selectedName+'. As campanhas, contatos e atividade abaixo ficam neste consultor.'
-    : 'Acompanhe todos os consultores e abra a operação de uma pessoa para ver somente as campanhas e contatos dela.';
+    : 'Acompanhe todos os consultores e abra a operação de uma pessoa para ver somente as campanhas e contatos dela.')+daySummary;
   el('consultantCards').innerHTML=visibleConsultants.length?visibleConsultants.map(x=>{
     const selected=x.id===currentConsultantId;
     const active=x.active===true;
     const counts={campaigns:metricNumber(x.campaign_count),leads:metricNumber(x.lead_count),pending:metricNumber(x.pending_count),dialed:metricNumber(x.dialed_count),connected:metricNumber(x.connected_count),completed:metricNumber(x.completed_count),interested:metricNumber(x.interested_count),sales:metricNumber(x.sales_count),scheduled:metricNumber(x.scheduled_count),blocked:metricNumber(x.do_not_call_count),rate:metricNumber(x.contact_rate)};
     const cardMetric=(label,value)=>'<div class="consultant-metric"><span>'+label+'</span><strong>'+value+'</strong></div>';
-    return '<article class="consultant-card '+(selected?'selected':'')+'"><div class="consultant-card-head"><div><h3>'+esc(x.display_name)+'</h3><p class="consultant-login">@'+esc(x.username)+'</p></div><span class="badge '+(active?'green':'amber')+'">'+(active?'Ativo':'Bloqueado')+'</span></div><div class="consultant-presence"><span>Último acesso: '+fmtDate(x.last_seen_at)+'</span><span>'+counts.campaigns+' campanha'+(counts.campaigns===1?'':'s')+' em operação</span></div><div class="consultant-metrics">'+cardMetric('Leads',counts.leads)+cardMetric('Pendentes',counts.pending)+cardMetric('Ligações',counts.dialed)+cardMetric('Conectados',counts.connected)+cardMetric('Interessados',counts.interested)+cardMetric('Vendas',counts.sales)+cardMetric('Retornos',counts.scheduled)+cardMetric('Não ligar',counts.blocked)+cardMetric('Contato',counts.rate+'%')+'</div><div class="consultant-actions"><button class="mini" type="button" aria-pressed="'+selected+'" onclick="loadConsultant(\''+esc(x.id)+'\')">'+(selected?'Visão aberta':'Ver operação')+'</button><span class="badge">'+counts.completed+'/'+counts.leads+' concluídos</span></div></article>'
+    const period=selectedDay?' no dia':'';
+    const completedBadge=selectedDay?counts.completed+' concluídos no dia':counts.completed+'/'+counts.leads+' concluídos';
+    return '<article class="consultant-card '+(selected?'selected':'')+'"><div class="consultant-card-head"><div><h3>'+esc(x.display_name)+'</h3><p class="consultant-login">@'+esc(x.username)+'</p></div><span class="badge '+(active?'green':'amber')+'">'+(active?'Ativo':'Bloqueado')+'</span></div><div class="consultant-presence"><span>Último acesso: '+fmtDate(x.last_seen_at)+'</span><span>'+counts.campaigns+' campanha'+(counts.campaigns===1?'':'s')+' em operação</span></div><div class="consultant-metrics">'+cardMetric('Leads',counts.leads)+cardMetric('Pendentes',counts.pending)+cardMetric('Ligações'+period,counts.dialed)+cardMetric('Conectados'+period,counts.connected)+cardMetric('Interessados'+period,counts.interested)+cardMetric('Vendas'+period,counts.sales)+cardMetric('Retornos'+period,counts.scheduled)+cardMetric('Não ligar'+period,counts.blocked)+cardMetric('Contato'+period,counts.rate+'%')+'</div><div class="consultant-actions"><button class="mini" type="button" aria-pressed="'+selected+'" onclick="loadConsultant(\''+esc(x.id)+'\')">'+(selected?'Visão aberta':'Ver operação')+'</button><span class="badge">'+completedBadge+'</span></div></article>'
   }).join(''):'<div class="empty">Nenhum consultor neste filtro. Limpe a busca ou crie um novo acesso.</div>';
 
 

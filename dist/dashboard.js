@@ -14,6 +14,9 @@ function normalizeSearch(value){return String(value||'').normalize('NFD').replac
 const numberFormat=new Intl.NumberFormat('pt-BR');
 const number=value=>numberFormat.format(metricNumber(value));
 el('consultantFilter').onchange=()=>{selectedConsultant=el('consultantFilter').value;selectedCampaign='';leadOffset=0;refresh(false,false,true)};
+const saoPauloToday=()=>Object.fromEntries(new Intl.DateTimeFormat('en-US',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date()).filter(x=>x.type!=='literal').map(x=>[x.type,x.value]));
+const todayParts=saoPauloToday();el('dayFilter').max=todayParts.year+'-'+todayParts.month+'-'+todayParts.day;
+el('dayFilter').onchange=()=>{selectedDay=el('dayFilter').value;leadOffset=0;refresh(false,false,true)};
 let searchTimer;for(const id of ['teamSearch','teamStatus','campaignSearch','campaignStatus'])el(id).addEventListener(id.endsWith('Search')?'input':'change',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>{if(overview){render();renderDashboard()}},id.endsWith('Search')?120:0)});
 function renderDashboard(){
   const {consultants=[],campaigns=[],charts,metrics={}}=overview;
@@ -22,7 +25,10 @@ function renderDashboard(){
   el('sLeads').textContent=number(metrics.total);el('sCalls').textContent=number(metrics.dialed);
   el('activeCaption').textContent=selectedConsultant?'No filtro selecionado':consultants.length+' consultores cadastrados';
   el('pendingCaption').textContent=number(metrics.pending)+' clientes pendentes';
-  el('connectedCaption').textContent=number(metrics.connected)+' com contato registrado';
+  el('connectedCaption').textContent=number(metrics.connected)+(selectedDay?' contatos em '+fmtDay(selectedDay):' com contato registrado');
+  el('rateCaption').textContent=selectedDay?'Taxa das ligações de '+fmtDay(selectedDay):'Clientes com duração registrada';
+  el('dailyChartTitle').textContent=selectedDay?'Ligações em '+fmtDay(selectedDay):'Ligações nos últimos 7 dias';
+  el('outcomeChartCaption').textContent=selectedDay?'Resultados registrados em '+fmtDay(selectedDay):'Situação atual dos clientes';
   if(!charts){el('dailyChart').innerHTML=el('outcomeChart').innerHTML='<div class="empty">Os gráficos estarão disponíveis após a atualização do servidor.</div>';return}
   const daily=charts.daily||[],total=daily.reduce((s,d)=>s+metricNumber(d.total),0),max=Math.max(1,...daily.map(d=>metricNumber(d.total)));
   el('trendTotal').textContent=number(total)+' tentativas';
@@ -43,7 +49,7 @@ function renderDashboard(){
 function renderManagement(people,campaigns){
   const tq=normalizeSearch(el('teamSearch').value),ts=el('teamStatus').value;
   const shown=people.filter(p=>(!tq||normalizeSearch(p.display_name+' '+p.username).includes(tq))&&(!ts||(ts==='active'?p.active:!p.active)));
-  el('teamBody').innerHTML=shown.length?shown.map(p=>'<tr><td><strong>'+esc(p.display_name)+'</strong></td><td>'+esc(p.username)+'</td><td>'+number(p.campaign_count)+' campanhas<br><small>'+number(p.lead_count)+' clientes · '+number(p.connected_count)+' contatos</small></td><td><span class="badge '+(p.active?'green':'amber')+'">'+(p.active?'Ativo':'Bloqueado')+'</span></td><td>'+fmtDate(p.last_seen_at)+'</td><td><div class="actions"><button class="mini" data-consultant="'+esc(p.id)+'">Ver operação</button><button class="mini" data-action="'+(p.active?'block':'activate')+'" data-id="'+esc(p.id)+'">'+(p.active?'Bloquear':'Ativar')+'</button><button class="mini" data-action="password" data-id="'+esc(p.id)+'">Nova senha</button><button class="mini danger" data-action="delete_consultant" data-id="'+esc(p.id)+'">Excluir</button></div></td></tr>').join(''):'<tr><td colspan="6" class="empty">Nenhum consultor neste filtro.</td></tr>';
+  el('teamBody').innerHTML=shown.length?shown.map(p=>'<tr><td><strong>'+esc(p.display_name)+'</strong></td><td>'+esc(p.username)+'</td><td>'+number(p.campaign_count)+' campanhas<br><small>'+number(p.lead_count)+' clientes · '+number(p.connected_count)+' contatos'+(selectedDay?' em '+fmtDay(selectedDay):'')+'</small></td><td><span class="badge '+(p.active?'green':'amber')+'">'+(p.active?'Ativo':'Bloqueado')+'</span></td><td>'+fmtDate(p.last_seen_at)+'</td><td><div class="actions"><button class="mini" data-consultant="'+esc(p.id)+'">Ver operação</button><button class="mini" data-action="'+(p.active?'block':'activate')+'" data-id="'+esc(p.id)+'">'+(p.active?'Bloquear':'Ativar')+'</button><button class="mini" data-action="password" data-id="'+esc(p.id)+'">Nova senha</button><button class="mini danger" data-action="delete_consultant" data-id="'+esc(p.id)+'">Excluir</button></div></td></tr>').join(''):'<tr><td colspan="6" class="empty">Nenhum consultor neste filtro.</td></tr>';
   const cq=normalizeSearch(el('campaignSearch').value),cs=el('campaignStatus').value;
   const filtered=campaigns.filter(c=>(!cq||normalizeSearch(c.name+' '+c.source_filename).includes(cq))&&(!cs||c.status===cs));
   el('campaignBody').innerHTML=filtered.length?filtered.map(c=>'<tr><td><strong>'+esc(c.name)+'</strong><br><small>'+esc(c.source_filename)+'</small></td><td>'+esc(c.consultant_name)+'</td><td>'+number(c.completed)+' / '+number(c.total)+'<div class="progress"><i style="width:'+Math.min(100,c.total?c.completed/c.total*100:0)+'%"></i></div></td><td><span class="badge '+(c.status==='running'?'green':'')+'">'+esc(statusName[c.status]||c.status)+'</span><br><small>'+number(c.allowed_start_hour)+'h–'+number(c.allowed_end_hour)+'h · '+number(c.max_attempts_per_lead)+' tentativas · '+number(c.max_daily_calls)+'/dia</small></td><td><div class="actions"><button class="mini" data-campaign="'+esc(c.id)+'">Ver contatos</button><button class="mini danger" data-action="delete_campaign" data-id="'+esc(c.id)+'">Excluir planilha</button></div></td></tr>').join(''):'<tr><td colspan="5" class="empty">Nenhuma campanha neste filtro.</td></tr>';
