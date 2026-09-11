@@ -75,6 +75,13 @@ function effectiveAvailable(a=uploadAnalysis){return Number(a?.available||0)+(el
 function fileSize(bytes){return bytes<1024*1024?Math.max(1,Math.round(bytes/1024))+' KB':(bytes/1024/1024).toLocaleString('pt-BR',{maximumFractionDigits:1})+' MB'}
 function campaignFromFile(file){const name=file.name.replace(/\.(csv|xlsx)$/i,'').replace(/[_-]+/g,' ').replace(/\s+/g,' ').trim();return (name.length>=3?name:'Campanha '+(name||'nova')).slice(0,150)}
 function setFileQuickStatus(text,state=''){el('fileQuickStatus').textContent=text;el('fileQuickStatus').className='file-quick-status'+(state?' '+state:'')}
+function applyAnalysisOutcome(result,file,recovered=false){
+ const fresh=Number(result.available||0),reassignable=Number(result.reassignable||0),valid=Number(result.valid_unique||0),autoRedistribute=!fresh&&reassignable>0;
+ if(autoRedistribute)el('redistributeUnworked').checked=true;
+ if(autoRedistribute){setFileQuickStatus(file.name+' · '+fileSize(file.size)+' · '+number(reassignable)+' prontos para redistribuir','success');return 'A planilha foi lida: '+number(valid)+' telefones. Todos já estavam reservados, mas ainda não foram trabalhados; a redistribuição segura foi ativada.'}
+ if(fresh){setFileQuickStatus(file.name+' · '+fileSize(file.size)+' · '+number(fresh)+' novos disponíveis','success');return recovered?'Análise recuperada. Confira a divisão e confirme.':'Análise concluída. Confira a divisão e confirme o envio.'}
+ setFileQuickStatus(file.name+' · '+fileSize(file.size)+' · '+number(valid)+' lidos, todos protegidos','error');return 'A planilha foi lida, mas todos os telefones já possuem ligação, resultado ou retorno e não podem ser transferidos.';
+}
 function updateAdvancedSummary(){el('advancedSettingsSummary').textContent=el('ringTimeout').value+'s · intervalo '+el('interval').value+'s · '+el('allowedStart').value+'h–'+el('allowedEnd').value+'h · '+el('maxDaily').value+'/dia'}
 function effectivePending(person,a=uploadAnalysis){const moved=el('redistributeUnworked').checked?Number(a?.reassignable_by_consultant?.[person.id]||0):0;return Math.max(0,Number(person.pending_count||0)-moved)}
 function calculatedSizes(people,total,mode=el('distributionMode').value){
@@ -146,9 +153,9 @@ el('distributionMode').onchange=()=>{if(el('distributionMode').value==='custom'&
 el('redistributeUnworked').onchange=()=>{if(el('distributionMode').value==='custom'){const people=activeAllocationPeople().filter(p=>allocationDraft.get(p.id)?.selected),available=effectiveAvailable();people.forEach((p,i)=>{allocationDraft.get(p.id).count=Math.floor(available/people.length)+(i<available%people.length?1:0)})}renderAllocations();saveUploadDraft()};
 async function analyzeSelectedFile(force=false){
  const file=el('masterFile').files[0];if(!file){el('uploadMsg').textContent='Selecione uma planilha primeiro.';return}if(file.size>8*1024*1024){el('uploadMsg').textContent='O arquivo deve ter no máximo 8 MB.';return}
- const identity=fileIdentity(file),cached=analysisCache.get(identity);if(!force&&cached&&Date.now()-cached.time<30000){uploadAnalysis={...cached.value,file:identity};setFileQuickStatus(file.name+' · '+fileSize(file.size)+' · análise pronta','success');el('uploadMsg').textContent='Análise recuperada. Confira a divisão e confirme.';renderAllocations();return}
+ const identity=fileIdentity(file),cached=analysisCache.get(identity);if(!force&&cached&&Date.now()-cached.time<30000){uploadAnalysis={...cached.value,file:identity};el('uploadMsg').textContent=applyAnalysisOutcome(cached.value,file,true);saveUploadDraft();renderAllocations();return}
  const seq=++analysisSequence,fd=new FormData();fd.append('file',file);el('analyzeUpload').disabled=true;el('uploadMsg').style.color='';el('uploadMsg').textContent='Verificando telefones válidos e já distribuídos…';uploadAnalysis=null;uploadRequest=null;setUploadProgress(true,'Analisando a planilha','Validando telefones e verificando contatos disponíveis…');renderAllocations();
- try{const result=await api('preview_upload',fd,true);if(seq!==analysisSequence)return;uploadAnalysis={...result,file:identity};analysisCache.set(identity,{time:Date.now(),value:result});while(analysisCache.size>3)analysisCache.delete(analysisCache.keys().next().value);setFileQuickStatus(file.name+' · '+fileSize(file.size)+' · '+number(effectiveAvailable(result))+' disponíveis','success');el('uploadMsg').textContent='Análise concluída. Confira a divisão e confirme o envio.';saveUploadDraft()}
+ try{const result=await api('preview_upload',fd,true);if(seq!==analysisSequence)return;uploadAnalysis={...result,file:identity};analysisCache.set(identity,{time:Date.now(),value:result});while(analysisCache.size>3)analysisCache.delete(analysisCache.keys().next().value);el('uploadMsg').textContent=applyAnalysisOutcome(result,file);saveUploadDraft()}
  catch(err){if(seq===analysisSequence){setFileQuickStatus(file.name+' · não foi possível analisar','error');el('uploadMsg').style.color='var(--danger)';el('uploadMsg').textContent=err.message}}
  finally{if(seq===analysisSequence){setUploadProgress(false);el('analyzeUpload').disabled=false;renderAllocations()}}
 }

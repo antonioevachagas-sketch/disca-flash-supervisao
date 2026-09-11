@@ -31,6 +31,7 @@ assert(dashboard.includes("const uploadDraftKey='df_upload_draft_v3'"),'Rascunho
 assert(dashboard.includes("mode!=='smart'"),'Cálculo inteligente por carga ausente');
 assert(dashboard.includes('analysisCache.set'),'Reutilização rápida da análise ausente');
 assert(dashboard.includes('campaignFromFile(file)'),'Nome automático da campanha ausente');
+assert(dashboard.includes('autoRedistribute=!fresh&&reassignable>0'),'Redistribuição segura automática ausente');
 assert(dashboard.includes("people.forEach(p=>allocationDraft.set(p.id,{selected:true,count:0}))"),'Seleção automática da equipe ausente');
 const app=readFileSync(new URL('app.js',root),'utf8');
 assert(app.includes('day:selectedDay'),'Filtro de dia não enviado ao servidor');
