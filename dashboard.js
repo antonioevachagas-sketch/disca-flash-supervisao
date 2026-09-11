@@ -68,10 +68,16 @@ document.addEventListener('click',e=>{const n=e.target.closest('[data-consultant
 el('actionForm').onsubmit=async e=>{e.preventDefault();if(!pendingAction||mutationPending)return;const form=e.currentTarget,{action,id}=pendingAction;mutationPending=true;busy(form,true);el('actionMsg').textContent='Salvando alteração…';let done=false;try{if(action==='password')await api('reset_password',{id,password:el('actionPassword').value});else if(action==='activate'||action==='block')await api('set_consultant_active',{id,active:action==='activate'});else await api(action,{id,force_archive:el('forceArchive').checked});done=true;if(action==='delete_consultant'&&(selectedConsultant===id||overview.campaigns.some(c=>c.id===selectedCampaign&&c.assigned_to===id))){selectedConsultant='';selectedCampaign='';leadOffset=0}if(action==='delete_campaign'&&selectedCampaign===id){selectedCampaign='';leadOffset=0}await refresh(false,true);el('actionDialog').close();toast(action.startsWith('delete')?'Removido da operação. Histórico e proteção dos contatos preservados.':'Alteração salva com sucesso.')}catch(err){el('actionMsg').textContent=(done?'Alteração salva. Atualize a lista. ':'')+err.message;if(!done&&action.startsWith('delete')&&err.status===409)el('forceArchiveField').classList.remove('hidden')}finally{mutationPending=false;busy(form,false)}};
 Object.assign(eventName,{CONSULTANT_REMOVED:'Consultor excluído',CAMPAIGN_REMOVED:'Planilha excluída'});
 const allocationDraft=new Map();let uploadAnalysis=null,analysisSequence=0,uploadRequest=null,uploadPhase='idle';
-const uploadDraftKey='df_upload_draft_v2';
+const uploadDraftKey='df_upload_draft_v3';
 function fileIdentity(file){return file?[file.name,file.size,file.lastModified].join('|'):''}
 function activeAllocationPeople(){return (overview?.consultants||[]).filter(p=>p.active)}
 function effectiveAvailable(a=uploadAnalysis){return Number(a?.available||0)+(el('redistributeUnworked').checked?Number(a?.reassignable||0):0)}
+function effectivePending(person,a=uploadAnalysis){const moved=el('redistributeUnworked').checked?Number(a?.reassignable_by_consultant?.[person.id]||0):0;return Math.max(0,Number(person.pending_count||0)-moved)}
+function calculatedSizes(people,total,mode=el('distributionMode').value){
+ const sizes=people.map(()=>0);if(!people.length)return sizes;
+ if(mode!=='smart')return people.map((_,i)=>Math.floor(total/people.length)+(i<total%people.length?1:0));
+ for(let assigned=0;assigned<total;assigned++){let least=0;for(let i=1;i<people.length;i++)if(effectivePending(people[i])+sizes[i]<effectivePending(people[least])+sizes[least])least=i;sizes[least]++}return sizes;
+}
 function setUploadProgress(active,title='',message=''){
  uploadPhase=active?(title.startsWith('Analisando')?'analyzing':'uploading'):'idle';
  el('uploadProgress').classList.toggle('hidden',!active);el('uploadDialog').setAttribute('aria-busy',String(active));
@@ -97,14 +103,14 @@ function clearUploadDraft(){
 function renderAllocations(){
  const active=activeAllocationPeople(),single=el('allocationTarget').value==='single',custom=!single&&el('distributionMode').value==='custom';
  const selected=active.filter(p=>allocationDraft.get(p.id)?.selected).slice(0,single?1:active.length);
- const available=effectiveAvailable();
+ const available=effectiveAvailable(),suggested=uploadAnalysis?calculatedSizes(selected,available,single?'equal':el('distributionMode').value):[];
  el('allocationTitle').textContent=single?'Escolha o consultor':'Dividir entre consultores';
  el('allocationHelp').textContent=single?'A planilha inteira irá somente para a pessoa escolhida.':'Selecione quem receberá contatos. A divisão considera apenas telefones novos e válidos.';
  el('distributionModeField').classList.toggle('hidden',single);el('selectAllConsultants').classList.toggle('hidden',single);
- el('allocationList').innerHTML=active.length?active.map(p=>{const entry=allocationDraft.get(p.id)||{selected:false,count:0},i=selected.findIndex(x=>x.id===p.id);const equal=uploadAnalysis&&i>=0?Math.floor(available/selected.length)+(i<available%selected.length?1:0):null;
+ el('allocationList').innerHTML=active.length?active.map(p=>{const entry=allocationDraft.get(p.id)||{selected:false,count:0},i=selected.findIndex(x=>x.id===p.id),planned=uploadAnalysis&&i>=0?suggested[i]:null;
  const checked=i>=0,control=single?'radio':'checkbox';
- const allocationState=uploadPhase==='analyzing'?'Analisando…':equal===null?'Aguardando análise':number(equal)+' contatos';
- return '<div class="allocation-row '+(checked?'selected':'')+'"><label><input type="'+control+'" '+(single?'name="singleConsultant" ':'')+'data-allocation="'+esc(p.id)+'" aria-describedby="allocationHelp" '+(checked?'checked':'')+'><span>'+esc(p.display_name)+'<small>@'+esc(p.username)+'</small></span></label>'+(custom?'<input type="number" data-quantity="'+esc(p.id)+'" aria-label="Quantidade para '+esc(p.display_name)+'" min="1" max="10000" step="1" '+(!checked?'disabled':'')+' value="'+(entry.count||'')+'" placeholder="Quantidade">':'<span class="allocation-count">'+allocationState+'</span>')+'</div>'}).join(''):'<p class="sub small">Crie ou ative um consultor para distribuir contatos.</p>';
+ const allocationState=uploadPhase==='analyzing'?'Analisando…':planned===null?'Aguardando análise':number(planned)+' contatos';
+ return '<div class="allocation-row '+(checked?'selected':'')+'"><label><input type="'+control+'" '+(single?'name="singleConsultant" ':'')+'data-allocation="'+esc(p.id)+'" aria-describedby="allocationHelp" '+(checked?'checked':'')+'><span>'+esc(p.display_name)+'<small>@'+esc(p.username)+' · '+number(effectivePending(p))+' pendentes agora</small></span></label>'+(custom?'<input type="number" data-quantity="'+esc(p.id)+'" aria-label="Quantidade para '+esc(p.display_name)+'" min="1" max="10000" step="1" '+(!checked?'disabled':'')+' value="'+(entry.count||'')+'" placeholder="Quantidade">':'<span class="allocation-count">'+allocationState+'</span>')+'</div>'}).join(''):'<p class="sub small">Crie ou ative um consultor para distribuir contatos.</p>';
  const reassignable=Number(uploadAnalysis?.reassignable||0);el('redistributeUnworkedField').classList.toggle('hidden',!uploadAnalysis||reassignable<1);el('redistributeUnworkedHelp').textContent=reassignable?number(reassignable)+' contato(s) sem ligação ou resultado podem ser redistribuídos com segurança.':'Transfere somente contatos sem ligação, resultado ou retorno registrado.';
  updateDistributionSummary();
 }
@@ -118,6 +124,7 @@ function updateDistributionSummary(){
   if(!list.length)message+=single?' Escolha o consultor que receberá a planilha.':' Selecione pelo menos um consultor.';
   else if(single)message+=' Todos os '+number(available)+' contatos disponíveis serão enviados somente para '+chosen.display_name+'.';
   else if(custom){total=list.reduce((s,x)=>s+Number(x.count||0),0);const quantitiesValid=list.every(x=>Number.isInteger(x.count)&&x.count>0);valid=valid&&quantitiesValid&&total<=available;message+=' '+number(total)+' selecionados para distribuir.';if(total>available)message+=' A quantidade ultrapassa os contatos disponíveis.';else if(total<available)message+=' '+number(available-total)+' ficarão sem distribuição.';if(!quantitiesValid)message+=' Informe uma quantidade positiva para cada selecionado.'}
+  else if(el('distributionMode').value==='smart'){const people=activeAllocationPeople().filter(p=>list.some(x=>x.consultant_id===p.id)),sizes=calculatedSizes(people,available,'smart');message+=' Distribuição inteligente pela carga pendente: '+people.map((p,i)=>p.display_name+' recebe '+number(sizes[i])).join(' · ')+'.';}
   else message+=' Divisão igual entre '+list.length+' consultor(es); diferenças de até 1 contato quando houver sobra.';
   if(!available&&Number(a.reassignable||0)>0&&!el('redistributeUnworked').checked)message+=' Marque “Incluir contatos ainda não trabalhados” para liberar a distribuição.';
  }
