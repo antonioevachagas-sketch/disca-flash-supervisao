@@ -14,9 +14,15 @@ assert(html.includes('id="allocationTarget"'),'Seletor de destino da planilha au
 assert(html.includes('value="single"'),'Opção de envio para um único consultor ausente');
 assert(html.includes('id="dayFilter"'),'Filtro de dia ausente');
 assert(html.includes('id="clearDayFilter"'),'Ação para limpar o filtro de dia ausente');
+assert(html.includes('id="redistributeUnworked"'),'Opção segura de redistribuição ausente');
+assert(html.includes('id="uploadProgress"'),'Carregamento da planilha ausente');
+assert(html.includes('id="uploadDraftStatus"'),'Status do rascunho ausente');
 const dashboard=readFileSync(new URL('dashboard.js',root),'utf8');
 assert(dashboard.includes("el('allocationTarget').value==='single'"),'Regra de seleção única ausente');
 assert(dashboard.includes("distribution_mode:single?'equal'"),'Envio único deve usar a distribuição integral existente');
+assert(dashboard.includes("redistribute_unworked:String(el('redistributeUnworked').checked)"),'Redistribuição segura não enviada ao servidor');
+assert(dashboard.includes("if(el('masterFile').files[0])analyzeSelectedFile()"),'Planilha não inicia análise automática');
+assert(dashboard.includes("const uploadDraftKey='df_upload_draft_v2'"),'Rascunho do modal não persistido');
 const app=readFileSync(new URL('app.js',root),'utf8');
 assert(app.includes('day:selectedDay'),'Filtro de dia não enviado ao servidor');
 assert(app.includes("selectedDay=result.selected_day||''"),'Dia confirmado pelo servidor não aplicado');
